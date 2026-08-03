@@ -281,6 +281,55 @@ def trip_summary(conn, trip_id: int) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def export_slim_rows(conn) -> list[dict]:
+    """
+    Плоская выгрузка в компактном формате, который напрямую понимает
+    дашборд (dashboard.html): ключи d,w,c,cat,typ,br,mdl,f,q,wt,y,sp.
+    """
+    rows = conn.execute(
+        """
+        SELECT
+            t.trip_date as trip_date,
+            w.name as water,
+            t.condition as condition,
+            l.category as category,
+            l.type as type,
+            l.brand as brand,
+            l.model as model,
+            sp.name as fish,
+            c.qty as qty,
+            c.weight_g as weight_g,
+            sport.name as spot
+        FROM catches c
+        JOIN trips t ON t.id = c.trip_id
+        JOIN waters w ON w.id = t.water_id
+        LEFT JOIN spots sport ON sport.id = t.spot_id
+        JOIN lures l ON l.id = c.lure_id
+        JOIN species sp ON sp.id = c.species_id
+        ORDER BY t.trip_date
+        """
+    ).fetchall()
+
+    out = []
+    for r in rows:
+        y, m, d = r["trip_date"].split("-")
+        out.append({
+            "d": f"{d}.{m}.{y[2:]}",
+            "w": r["water"],
+            "c": r["condition"],
+            "cat": r["category"],
+            "typ": r["type"],
+            "br": r["brand"],
+            "mdl": r["model"],
+            "f": r["fish"],
+            "q": r["qty"],
+            "wt": r["weight_g"],
+            "y": y,
+            "sp": r["spot"] or "",
+        })
+    return out
+
+
 def export_all_rows(conn) -> list[dict]:
     """Плоская выгрузка всех данных — формат максимально близкий к исходной таблице Numbers."""
     rows = conn.execute(

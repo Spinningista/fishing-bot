@@ -19,9 +19,10 @@ from aiogram.types import Message, CallbackQuery, BufferedInputFile
 import config
 import db
 import keyboards as kb
-from states import TripFlow
+from states import TripFlow, AddPhotoFlow
 import export as export_module
 import photo_storage
+import web_api
 
 logging.basicConfig(level=logging.INFO)
 router = Router()
@@ -57,7 +58,8 @@ async def cmd_start(message: Message, state: FSMContext):
     await message.answer(
         "Журнал уловов на спиннинг 🎣\n\n"
         "/new — начать новый выезд\n"
-        "/export — выгрузить весь архив в CSV",
+        "/export — выгрузить весь архив в CSV\n"
+        "/addphoto — добавить фото к любой приманке из справочника",
     )
 
 
@@ -71,6 +73,70 @@ async def cmd_export(message: Message):
     csv_bytes = export_module.rows_to_csv_bytes(rows)
     file = BufferedInputFile(csv_bytes, filename="Спиннинг_экспорт.csv")
     await message.answer_document(file, caption=f"Экспорт: {len(rows)} строк улова.")
+
+
+# ---------------------------------------------------------------------------
+# /addphoto — добавить или заменить фото у любой приманки из справочника
+# ---------------------------------------------------------------------------
+
+@router.message(Command("addphoto"))
+async def cmd_addphoto(message: Message, state: FSMContext):
+    if not config.PHOTOS_ENABLED:
+        await message.answer(
+            "Хранилище фото ещё не настроено. Нужно задать GITHUB_TOKEN и GITHUB_REPO "
+            "в переменных окружения (см. README, шаг про фото приманок)."
+        )
+        return
+    await state.clear()
+    await state.set_state(AddPhotoFlow.searching)
+    await message.answer("Введи название или бренд приманки, к которой хочешь добавить/заменить фото:")
+
+
+@router.message(AddPhotoFlow.searching)
+async def addphoto_search(message: Message, state: FSMContext):
+    with db.get_conn() as conn:
+        results = db.search_lures(conn, message.text.strip())
+    if not results:
+        await message.answer("Ничего не нашёл. Попробуй другой запрос:")
+        return
+    await message.answer("Нашёл вот что:", reply_markup=kb.lure_search_results_kb(results, prefix="aplure"))
+
+
+@router.callback_query(AddPhotoFlow.searching, F.data.startswith("aplure:"))
+async def addphoto_pick(callback: CallbackQuery, state: FSMContext):
+    value = callback.data.split(":", 1)[1]
+    if value == "__new__":
+        await callback.message.answer("Такой приманки не нашлось. Попробуй другой запрос:")
+        await callback.answer()
+        return
+    lure_id = int(value)
+    with db.get_conn() as conn:
+        lure = db.get_lure(conn, lure_id)
+    await state.update_data(photo_lure_id=lure_id)
+    await state.set_state(AddPhotoFlow.waiting_photo)
+    await callback.message.answer(f'Пришли фото для "{lure["brand"]} — {lure["model"]}":')
+    await callback.answer()
+
+
+@router.message(AddPhotoFlow.waiting_photo, F.photo)
+async def addphoto_receive(message: Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    lure_id = data["photo_lure_id"]
+    photo = message.photo[-1]
+    file = await bot.get_file(photo.file_id)
+    file_bytes = await bot.download_file(file.file_path)
+
+    with db.get_conn() as conn:
+        lure = db.get_lure(conn, lure_id)
+        filename = photo_storage.make_filename(lure["brand"], lure["model"])
+        try:
+            url = photo_storage.upload_photo(file_bytes.read(), filename)
+            if url:
+                db.set_lure_photo(conn, lure_id, url)
+                await message.answer("Фото сохранено ✅ Можешь прислать /addphoto ещё для другой приманки.")
+        except Exception as e:
+            await message.answer(f"Не получилось загрузить фото ({e}).")
+    await state.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -582,7 +648,10 @@ async def main():
     bot = Bot(token=config.BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
-    await dp.start_polling(bot)
+    await asyncio.gather(
+        dp.start_polling(bot),
+        web_api.run_web_app(),
+    )
 
 
 if __name__ == "__main__":

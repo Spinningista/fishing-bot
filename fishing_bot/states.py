@@ -32,3 +32,8 @@ class TripFlow(StatesGroup):
     entering_weight = State()
 
     after_catch = State()  # "ещё улов" / "закончить выезд"
+
+
+class AddPhotoFlow(StatesGroup):
+    searching = State()
+    waiting_photo = State()
