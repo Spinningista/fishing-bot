@@ -5,11 +5,13 @@
 (dashboard.html) обращается к /api/catches и получает свежие данные прямо
 из базы — без ручного экспорта.
 """
-import json
+import logging
 from aiohttp import web
 
 import config
 import db
+
+logger = logging.getLogger("web_api")
 
 
 async def handle_catches(request: web.Request) -> web.Response:
@@ -38,8 +40,18 @@ def build_app() -> web.Application:
 
 
 async def run_web_app():
+    logger.info(f"Starting web API on 0.0.0.0:{config.PORT} (PORT env resolved)")
     app = build_app()
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host="0.0.0.0", port=config.PORT)
-    await site.start()
+    try:
+        await site.start()
+        logger.info(f"Web API started successfully on port {config.PORT}")
+    except Exception:
+        logger.exception("Failed to start web API")
+        raise
+    # держим корутину живой вечно, иначе asyncio.gather сочтёт её завершённой
+    import asyncio
+    while True:
+        await asyncio.sleep(3600)
