@@ -2,16 +2,20 @@
 Маленький веб-сервер (aiohttp), который отдаёт данные для дашборда.
 
 Работает в том же процессе, что и Telegram-бот (см. bot.py). Дашборд
-(dashboard.html) обращается к /api/catches и получает свежие данные прямо
-из базы — без ручного экспорта.
+теперь отдаётся с того же домена (GET /), поэтому браузер не считает
+запрос к /api/catches "чужим" — это убирает проблемы с CORS/file://,
+с которыми сталкивался Safari при открытии дашборда как локального файла.
 """
 import logging
+import os
 from aiohttp import web
 
 import config
 import db
 
 logger = logging.getLogger("web_api")
+
+DASHBOARD_PATH = os.path.join(os.path.dirname(__file__), "dashboard.html")
 
 
 async def handle_catches(request: web.Request) -> web.Response:
@@ -28,13 +32,23 @@ async def handle_catches(request: web.Request) -> web.Response:
     )
 
 
+async def handle_dashboard(request: web.Request) -> web.Response:
+    try:
+        with open(DASHBOARD_PATH, encoding="utf-8") as f:
+            html = f.read()
+        return web.Response(text=html, content_type="text/html")
+    except FileNotFoundError:
+        return web.Response(text="dashboard.html не найден рядом с ботом", status=404)
+
+
 async def handle_health(request: web.Request) -> web.Response:
     return web.Response(text="OK")
 
 
 def build_app() -> web.Application:
     app = web.Application()
-    app.router.add_get("/", handle_health)
+    app.router.add_get("/", handle_dashboard)
+    app.router.add_get("/health", handle_health)
     app.router.add_get("/api/catches", handle_catches)
     return app
 
