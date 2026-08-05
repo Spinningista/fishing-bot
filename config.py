@@ -28,7 +28,7 @@ PHOTOS_ENABLED = bool(GITHUB_TOKEN and GITHUB_REPO)
 FUZZY_THRESHOLD = 0.72
 
 # Сколько последних вариантов показывать кнопками (приманки/водоёмы/места)
-RECENT_LIMIT = 8
+RECENT_LIMIT = 20
 
 # --- Веб-API для дашборда ---
 # Дашборд (HTML-файл) обращается к этому адресу бота, чтобы получить свежие
