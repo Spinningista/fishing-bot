@@ -284,7 +284,7 @@ def trip_summary(conn, trip_id: int) -> list[sqlite3.Row]:
 def export_slim_rows(conn) -> list[dict]:
     """
     Плоская выгрузка в компактном формате, который напрямую понимает
-    дашборд (dashboard.html): ключи d,w,c,cat,typ,br,mdl,f,q,wt,y,sp.
+    дашборд (dashboard.html): ключи d,w,c,cat,typ,br,mdl,f,q,wt,y,sp,ph.
     """
     rows = conn.execute(
         """
@@ -296,6 +296,7 @@ def export_slim_rows(conn) -> list[dict]:
             l.type as type,
             l.brand as brand,
             l.model as model,
+            l.photo_url as photo_url,
             sp.name as fish,
             c.qty as qty,
             c.weight_g as weight_g,
@@ -321,6 +322,7 @@ def export_slim_rows(conn) -> list[dict]:
             "typ": r["type"],
             "br": r["brand"],
             "mdl": r["model"],
+            "ph": r["photo_url"] or "",
             "f": r["fish"],
             "q": r["qty"],
             "wt": r["weight_g"],
