@@ -256,6 +256,21 @@
   .info-line b{color:var(--brass-bright); font-weight:500;}
   .info-line .sep{color:var(--panel-line);}
 
+  .lure-photo-card{
+    display:flex; gap:20px; align-items:center;
+    background:var(--panel); border:1px solid var(--panel-line); border-radius:var(--radius);
+    padding:16px; margin-bottom:20px;
+  }
+  .lure-photo-card img{
+    width:110px; height:110px; object-fit:cover; border-radius:var(--radius);
+    border:1px solid var(--panel-line); background:var(--bg-deep); flex-shrink:0;
+  }
+  .lure-photo-placeholder{
+    width:110px; height:110px; border-radius:var(--radius); flex-shrink:0;
+    border:1px dashed var(--panel-line); display:flex; align-items:center; justify-content:center;
+    color:var(--ink-faint); font-size:11px; text-align:center; padding:8px;
+  }
+
   footer{
     margin-top:40px; padding-top:20px; border-top:1px solid var(--panel-line);
     font-size:12px; color:var(--ink-faint); font-family:'IBM Plex Mono', monospace;
@@ -725,7 +740,11 @@ function initLureTab(){
     if(!records.length) return;
     const first = records[0];
     const content = document.getElementById('lureContent');
-    content.innerHTML = `<div class="info-line"><span>Бренд: <b>${escapeHtml(br)}</b></span><span class="sep">·</span><span>Категория: <b>${escapeHtml(first.cat)}</b></span><span class="sep">·</span><span>Тип: <b>${escapeHtml(first.typ)}</b></span></div>` +
+    const photoUrl = records.map(r=>r.ph).find(p=>p);
+    const photoBlock = photoUrl
+      ? `<div class="lure-photo-card"><img src="${escapeHtml(photoUrl)}" alt="${escapeHtml(br)} ${escapeHtml(mdl)}"><div class="info-line" style="margin:0;"><span>Бренд: <b>${escapeHtml(br)}</b></span><span class="sep">·</span><span>Категория: <b>${escapeHtml(first.cat)}</b></span><span class="sep">·</span><span>Тип: <b>${escapeHtml(first.typ)}</b></span></div></div>`
+      : `<div class="lure-photo-card"><div class="lure-photo-placeholder">нет фото</div><div class="info-line" style="margin:0;"><span>Бренд: <b>${escapeHtml(br)}</b></span><span class="sep">·</span><span>Категория: <b>${escapeHtml(first.cat)}</b></span><span class="sep">·</span><span>Тип: <b>${escapeHtml(first.typ)}</b></span></div></div>`;
+    content.innerHTML = photoBlock +
       entityDashboardHtml('lure', {showSpecies:true, showWater:true, showSpot:true, showCondition2:true});
     renderEntityStats('lure', records, {showSpecies:true, showWater:true, showSpot:true, showCondition:true});
   };
