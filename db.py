@@ -332,6 +332,93 @@ def export_slim_rows(conn) -> list[dict]:
     return out
 
 
+def recent_catches(conn, limit: int = 10) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT c.id as catch_id, c.qty, c.weight_g, c.trip_id,
+               t.trip_date, w.name as water_name,
+               l.brand as lure_brand, l.model as lure_model,
+               s.name as species_name
+        FROM catches c
+        JOIN trips t ON t.id = c.trip_id
+        JOIN waters w ON w.id = t.water_id
+        JOIN lures l ON l.id = c.lure_id
+        JOIN species s ON s.id = c.species_id
+        ORDER BY c.id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def get_catch(conn, catch_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT c.id as catch_id, c.qty, c.weight_g, c.trip_id,
+               t.trip_date, w.name as water_name,
+               l.brand as lure_brand, l.model as lure_model,
+               s.name as species_name
+        FROM catches c
+        JOIN trips t ON t.id = c.trip_id
+        JOIN waters w ON w.id = t.water_id
+        JOIN lures l ON l.id = c.lure_id
+        JOIN species s ON s.id = c.species_id
+        WHERE c.id = ?
+        """,
+        (catch_id,),
+    ).fetchone()
+
+
+def delete_catch(conn, catch_id: int):
+    row = conn.execute("SELECT trip_id FROM catches WHERE id = ?", (catch_id,)).fetchone()
+    if not row:
+        return
+    trip_id = row["trip_id"]
+    conn.execute("DELETE FROM catches WHERE id = ?", (catch_id,))
+    remaining = conn.execute(
+        "SELECT COUNT(*) as c FROM catches WHERE trip_id = ?", (trip_id,)
+    ).fetchone()["c"]
+    if remaining == 0:
+        conn.execute("DELETE FROM trips WHERE id = ?", (trip_id,))
+
+
+def recent_catches(conn, limit: int = 10) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT c.id, t.trip_date, w.name as water, l.brand, l.model,
+               sp.name as species_name, c.qty, c.weight_g
+        FROM catches c
+        JOIN trips t ON t.id = c.trip_id
+        JOIN waters w ON w.id = t.water_id
+        JOIN lures l ON l.id = c.lure_id
+        JOIN species sp ON sp.id = c.species_id
+        ORDER BY c.id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def get_catch(conn, catch_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT c.id, t.trip_date, w.name as water, l.brand, l.model,
+               sp.name as species_name, c.qty, c.weight_g
+        FROM catches c
+        JOIN trips t ON t.id = c.trip_id
+        JOIN waters w ON w.id = t.water_id
+        JOIN lures l ON l.id = c.lure_id
+        JOIN species sp ON sp.id = c.species_id
+        WHERE c.id = ?
+        """,
+        (catch_id,),
+    ).fetchone()
+
+
+def delete_catch(conn, catch_id: int):
+    conn.execute("DELETE FROM catches WHERE id = ?", (catch_id,))
+
+
 def export_all_rows(conn) -> list[dict]:
     """Плоская выгрузка всех данных — формат максимально близкий к исходной таблице Numbers."""
     rows = conn.execute(
