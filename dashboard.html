@@ -386,9 +386,14 @@
   <!-- ===================== LURE ===================== -->
   <div class="tabview" data-view="lure">
     <div class="picker-row">
+      <span class="picker-label">Категория:</span>
+      <select class="picker-input" id="lureCategorySelect">
+        <option value="">Все категории</option>
+      </select>
       <span class="picker-label">Приманка:</span>
-      <input class="picker-input" list="lureOptions" id="lureSelect" placeholder="Начни вводить название…" autocomplete="off">
-      <datalist id="lureOptions"></datalist>
+      <select class="picker-input" id="lureSelect">
+        <option value="">— выбери приманку —</option>
+      </select>
     </div>
     <div id="lureContent"><div class="empty-state">Выбери приманку из списка — покажу всю статистику по ней: где, когда и кого на неё поймал</div></div>
   </div>
@@ -710,27 +715,44 @@ function renderEntityStats(prefix, records, opts){
    LURE TAB
    ========================================================= */
 function initLureTab(){
-  const modelTotals = {};
+  // уникальные приманки: br||mdl -> {br, mdl, cat}
+  const lureMap = {};
   RAW.forEach(r=>{
     const key = r.br+'||'+r.mdl;
-    modelTotals[key] = (modelTotals[key]||0) + (r.q||1);
+    if(!lureMap[key]) lureMap[key] = {br:r.br, mdl:r.mdl, cat:r.cat};
   });
-  const options = Object.entries(modelTotals).sort((a,b)=>b[1]-a[1]);
-  const datalist = document.getElementById('lureOptions');
-  datalist.innerHTML = '';
-  const displayToKey = {};
-  options.forEach(([key,total])=>{
-    const [br,mdl] = key.split('||');
-    const display = `${br} — ${mdl}`;
-    displayToKey[display] = key;
+  const allLures = Object.entries(lureMap);
+
+  const categories = [...new Set(allLures.map(([,v])=>v.cat))].sort((a,b)=>a.localeCompare(b,'ru'));
+  const catSelect = document.getElementById('lureCategorySelect');
+  catSelect.innerHTML = '<option value="">Все категории</option>';
+  categories.forEach(cat=>{
     const opt = document.createElement('option');
-    opt.value = display;
-    datalist.appendChild(opt);
+    opt.value = cat; opt.textContent = cat;
+    catSelect.appendChild(opt);
   });
 
-  const input = document.getElementById('lureSelect');
-  input.oninput = ()=>{
-    const key = displayToKey[input.value];
+  const lureSelect = document.getElementById('lureSelect');
+
+  function populateLureSelect(catFilter){
+    lureSelect.innerHTML = '<option value="">— выбери приманку —</option>';
+    const filtered = allLures
+      .filter(([,v]) => !catFilter || v.cat === catFilter)
+      .sort((a,b)=> (a[1].br+' '+a[1].mdl).localeCompare(b[1].br+' '+b[1].mdl, 'ru'));
+    filtered.forEach(([key,v])=>{
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = `${v.br} — ${v.mdl}`;
+      lureSelect.appendChild(opt);
+    });
+    document.getElementById('lureContent').innerHTML = '<div class="empty-state">Выбери приманку из списка — покажу всю статистику по ней: где, когда и кого на неё поймал</div>';
+  }
+
+  catSelect.onchange = () => populateLureSelect(catSelect.value);
+  populateLureSelect('');
+
+  lureSelect.onchange = ()=>{
+    const key = lureSelect.value;
     if(!key){
       document.getElementById('lureContent').innerHTML = '<div class="empty-state">Выбери приманку из списка — покажу всю статистику по ней: где, когда и кого на неё поймал</div>';
       return;
