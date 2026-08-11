@@ -86,3 +86,33 @@ def skip_photo_kb() -> InlineKeyboardMarkup:
         [("📷 Прикрепить фото", "photo:add")],
         [("Пропустить", "photo:skip")],
     ])
+
+
+def recent_catches_kb(rows: list) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for r in rows:
+        label = f"{r['trip_date']} · {r['species_name']} x{r['qty']} · {r['water']}"
+        kb.button(text=label[:64], callback_data=f"delcatch:{r['id']}")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def confirm_delete_kb(catch_id: int) -> InlineKeyboardMarkup:
+    return _build([
+        [("🗑 Да, удалить", f"delconfirm:{catch_id}:yes"), ("Отмена", f"delconfirm:{catch_id}:no")],
+    ])
+
+
+def recent_catches_kb(rows: list) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for i, r in enumerate(rows, 1):
+        label = f"🗑 №{i} · {r['species_name']} · {r['lure_brand']}"
+        kb.button(text=label[:64], callback_data=f"delask:{r['catch_id']}")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def confirm_delete_kb(catch_id: int) -> InlineKeyboardMarkup:
+    return _build([
+        [("Да, удалить", f"delyes:{catch_id}"), ("Отмена", "delno:0")],
+    ])
