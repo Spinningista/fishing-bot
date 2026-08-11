@@ -59,7 +59,8 @@ async def cmd_start(message: Message, state: FSMContext):
         "Журнал уловов на спиннинг 🎣\n\n"
         "/new — начать новый выезд\n"
         "/export — выгрузить весь архив в CSV\n"
-        "/addphoto — добавить фото к любой приманке из справочника",
+        "/addphoto — добавить фото к любой приманке из справочника\n"
+        "/recent — последние уловы (можно удалить ошибочную запись)",
     )
 
 
@@ -73,6 +74,53 @@ async def cmd_export(message: Message):
     csv_bytes = export_module.rows_to_csv_bytes(rows)
     file = BufferedInputFile(csv_bytes, filename="Спиннинг_экспорт.csv")
     await message.answer_document(file, caption=f"Экспорт: {len(rows)} строк улова.")
+
+
+# ---------------------------------------------------------------------------
+# /recent — последние уловы, с возможностью удалить ошибочную запись
+# ---------------------------------------------------------------------------
+
+@router.message(Command("recent"))
+async def cmd_recent(message: Message):
+    with db.get_conn() as conn:
+        rows = db.recent_catches(conn, limit=10)
+    if not rows:
+        await message.answer("Пока нет ни одной записи.")
+        return
+    await message.answer(
+        "Последние уловы — нажми на запись, чтобы удалить её:",
+        reply_markup=kb.recent_catches_kb(rows),
+    )
+
+
+@router.callback_query(F.data.startswith("delcatch:"))
+async def process_delcatch_choice(callback: CallbackQuery):
+    catch_id = int(callback.data.split(":", 1)[1])
+    with db.get_conn() as conn:
+        row = db.get_catch(conn, catch_id)
+    if not row:
+        await callback.answer("Запись уже не найдена.", show_alert=True)
+        return
+    text = (
+        f"Удалить эту запись?\n\n"
+        f"{row['trip_date']} · {row['water']}\n"
+        f"{row['species_name']} x{row['qty']} на {row['brand']} {row['model']}"
+        + (f", {row['weight_g']} г" if row['weight_g'] else "")
+    )
+    await callback.message.answer(text, reply_markup=kb.confirm_delete_kb(catch_id))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("delconfirm:"))
+async def process_delconfirm(callback: CallbackQuery):
+    _, catch_id, action = callback.data.split(":")
+    if action == "yes":
+        with db.get_conn() as conn:
+            db.delete_catch(conn, int(catch_id))
+        await callback.message.answer("Запись удалена ✅")
+    else:
+        await callback.message.answer("Отменено, запись оставлена.")
+    await callback.answer()
 
 
 # ---------------------------------------------------------------------------
@@ -140,8 +188,64 @@ async def addphoto_receive(message: Message, state: FSMContext, bot: Bot):
 
 
 # ---------------------------------------------------------------------------
-# Начало выезда: дата -> водоём -> место -> условия
+# /recent — последние уловы, с возможностью удалить ошибочную запись
 # ---------------------------------------------------------------------------
+
+async def show_recent(message: Message):
+    with db.get_conn() as conn:
+        rows = db.recent_catches(conn, limit=10)
+    if not rows:
+        await message.answer("Пока нет ни одной записи улова.")
+        return
+
+    lines = []
+    for i, r in enumerate(rows, 1):
+        weight = f", {r['weight_g']} г" if r["weight_g"] else ""
+        lines.append(
+            f"{i}. {r['trip_date']} · {r['water_name']} · {r['species_name']} x{r['qty']}{weight} "
+            f"— {r['lure_brand']} {r['lure_model']}"
+        )
+    text = "Последние уловы:\n\n" + "\n".join(lines) + "\n\nНажми на кнопку, чтобы удалить запись:"
+    await message.answer(text, reply_markup=kb.recent_catches_kb(rows))
+
+
+@router.message(Command("recent"))
+async def cmd_recent(message: Message, state: FSMContext):
+    await state.clear()
+    await show_recent(message)
+
+
+@router.callback_query(F.data.startswith("delask:"))
+async def process_delete_ask(callback: CallbackQuery):
+    catch_id = int(callback.data.split(":", 1)[1])
+    with db.get_conn() as conn:
+        c = db.get_catch(conn, catch_id)
+    if not c:
+        await callback.answer("Эта запись уже удалена.", show_alert=True)
+        return
+    weight = f", {c['weight_g']} г" if c["weight_g"] else ""
+    text = (
+        f"Удалить эту запись?\n\n"
+        f"{c['trip_date']} · {c['water_name']} · {c['species_name']} x{c['qty']}{weight} "
+        f"— {c['lure_brand']} {c['lure_model']}"
+    )
+    await callback.message.answer(text, reply_markup=kb.confirm_delete_kb(catch_id))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("delyes:"))
+async def process_delete_yes(callback: CallbackQuery):
+    catch_id = int(callback.data.split(":", 1)[1])
+    with db.get_conn() as conn:
+        db.delete_catch(conn, catch_id)
+    await callback.message.answer("Удалено ✅")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("delno:"))
+async def process_delete_no(callback: CallbackQuery):
+    await callback.message.answer("Отменено, запись осталась.")
+    await callback.answer()
 
 @router.message(Command("new"))
 async def cmd_new_trip(message: Message, state: FSMContext):
