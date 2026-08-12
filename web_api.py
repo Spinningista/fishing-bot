@@ -15,7 +15,12 @@ import db
 
 logger = logging.getLogger("web_api")
 
-DASHBOARD_PATH = os.path.join(os.path.dirname(__file__), "dashboard.html")
+# Дашборд ищем сначала на постоянном диске (/data) — это позволяет обновлять
+# его напрямую через консоль, в обход сборки Railway, если та почему-то
+# не подхватывает свежие файлы из GitHub. Если там его нет — берём версию
+# из репозитория рядом с кодом бота.
+_LOCAL_DASHBOARD_PATH = os.path.join(os.path.dirname(__file__), "dashboard.html")
+_DATA_DASHBOARD_PATH = "/data/dashboard.html"
 
 
 async def handle_catches(request: web.Request) -> web.Response:
@@ -33,12 +38,13 @@ async def handle_catches(request: web.Request) -> web.Response:
 
 
 async def handle_dashboard(request: web.Request) -> web.Response:
+    path = _DATA_DASHBOARD_PATH if os.path.exists(_DATA_DASHBOARD_PATH) else _LOCAL_DASHBOARD_PATH
     try:
-        with open(DASHBOARD_PATH, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             html = f.read()
         return web.Response(text=html, content_type="text/html")
     except FileNotFoundError:
-        return web.Response(text="dashboard.html не найден рядом с ботом", status=404)
+        return web.Response(text="dashboard.html не найден", status=404)
 
 
 async def handle_health(request: web.Request) -> web.Response:
