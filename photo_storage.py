@@ -15,19 +15,19 @@ import requests
 from config import GITHUB_TOKEN, GITHUB_REPO, GITHUB_BRANCH, PHOTOS_ENABLED
 
 
-def upload_photo(file_bytes: bytes, filename: str) -> str | None:
-    """Загружает фото в GitHub-репозиторий, возвращает публичную ссылку (raw URL) или None."""
+def upload_photo(file_bytes: bytes, filename: str, folder: str = "lure_photos") -> str | None:
+    """Загружает фото в GitHub-репозиторий (в указанную папку), возвращает публичную ссылку (raw URL) или None."""
     if not PHOTOS_ENABLED:
         return None
 
-    path = f"lure_photos/{filename}"
+    path = f"{folder}/{filename}"
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json",
     }
     payload = {
-        "message": f"Добавлено фото приманки: {filename}",
+        "message": f"Добавлено фото: {filename}",
         "content": base64.b64encode(file_bytes).decode("ascii"),
         "branch": GITHUB_BRANCH,
     }
@@ -38,6 +38,6 @@ def upload_photo(file_bytes: bytes, filename: str) -> str | None:
     return f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{path}"
 
 
-def make_filename(brand: str, model: str) -> str:
-    safe = "".join(c if c.isalnum() else "_" for c in f"{brand}_{model}")
+def make_filename(*parts: str) -> str:
+    safe = "".join(c if c.isalnum() else "_" for c in "_".join(parts))
     return f"{safe}_{int(time.time())}.jpg"
