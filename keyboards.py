@@ -134,3 +134,30 @@ def catalog_delete_kb(item_type: str, item_id: int) -> InlineKeyboardMarkup:
     return _build([
         [("🗑 Да, удалить", f"catdel:{item_type}:{item_id}:yes"), ("Отмена", f"catdel:{item_type}:{item_id}:no")],
     ])
+
+
+def catch_photo_pick_kb(rows: list) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for r in rows:
+        has_photo = "📷 " if r["photo_url"] else ""
+        label = f"{has_photo}{r['trip_date']} · {r['species_name']} x{r['qty']} · {r['water']}"
+        kb.button(text=label[:64], callback_data=f"cphpick:{r['id']}")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def photo_manage_kb(prefix: str, item_id, has_photo: bool) -> InlineKeyboardMarkup:
+    rows = [[("📷 Добавить/заменить фото", f"{prefix}:add:{item_id}")]]
+    if has_photo:
+        rows.append([("🗑 Удалить фото", f"{prefix}:del:{item_id}")])
+    rows.append([("Отмена", f"{prefix}:cancel:{item_id}")])
+    return _build(rows)
+
+
+def water_photo_results_kb(rows: list) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for r in rows:
+        has_photo = "📷 " if r["photo_url"] else ""
+        kb.button(text=f"{has_photo}{r['name']}"[:64], callback_data=f"wphpick:{r['id']}")
+    kb.adjust(1)
+    return kb.as_markup()
