@@ -12,7 +12,8 @@ from config import DB_PATH, FUZZY_THRESHOLD, RECENT_LIMIT
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS waters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL
+    name TEXT UNIQUE NOT NULL,
+    photo_url TEXT
 );
 
 CREATE TABLE IF NOT EXISTS spots (
@@ -52,7 +53,8 @@ CREATE TABLE IF NOT EXISTS catches (
     lure_id INTEGER NOT NULL REFERENCES lures(id),
     species_id INTEGER NOT NULL REFERENCES species(id),
     qty INTEGER NOT NULL DEFAULT 1,
-    weight_g INTEGER
+    weight_g INTEGER,
+    photo_url TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_catches_trip ON catches(trip_id);
@@ -76,6 +78,13 @@ def get_conn():
 def init_db():
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        # Миграция для уже существующих баз, созданных до появления полей фото —
+        # CREATE TABLE IF NOT EXISTS не добавляет новые колонки в старую таблицу.
+        for table, column in [("waters", "photo_url"), ("catches", "photo_url")]:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+            except sqlite3.OperationalError:
+                pass  # колонка уже есть
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +145,14 @@ def water_ref_count(conn, water_id: int) -> int:
 def delete_water(conn, water_id: int):
     conn.execute("DELETE FROM spots WHERE water_id = ?", (water_id,))
     conn.execute("DELETE FROM waters WHERE id = ?", (water_id,))
+
+
+def get_water(conn, water_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM waters WHERE id = ?", (water_id,)).fetchone()
+
+
+def set_water_photo(conn, water_id: int, photo_url: str | None):
+    conn.execute("UPDATE waters SET photo_url = ? WHERE id = ?", (photo_url, water_id))
 
 
 # ---------------------------- Места ловли ----------------------------
@@ -321,13 +338,14 @@ def trip_summary(conn, trip_id: int) -> list[sqlite3.Row]:
 def export_slim_rows(conn) -> list[dict]:
     """
     Плоская выгрузка в компактном формате, который напрямую понимает
-    дашборд (dashboard.html): ключи d,w,c,cat,typ,br,mdl,f,q,wt,y,sp,ph.
+    дашборд (dashboard.html): ключи d,w,c,cat,typ,br,mdl,f,q,wt,y,sp,ph,cph,wph.
     """
     rows = conn.execute(
         """
         SELECT
             t.trip_date as trip_date,
             w.name as water,
+            w.photo_url as water_photo_url,
             t.condition as condition,
             l.category as category,
             l.type as type,
@@ -337,6 +355,7 @@ def export_slim_rows(conn) -> list[dict]:
             sp.name as fish,
             c.qty as qty,
             c.weight_g as weight_g,
+            c.photo_url as catch_photo_url,
             sport.name as spot
         FROM catches c
         JOIN trips t ON t.id = c.trip_id
@@ -365,6 +384,8 @@ def export_slim_rows(conn) -> list[dict]:
             "wt": r["weight_g"],
             "y": y,
             "sp": r["spot"] or "",
+            "cph": r["catch_photo_url"] or "",
+            "wph": r["water_photo_url"] or "",
         })
     return out
 
@@ -372,15 +393,13 @@ def export_slim_rows(conn) -> list[dict]:
 def recent_catches(conn, limit: int = 10) -> list[sqlite3.Row]:
     return conn.execute(
         """
-        SELECT c.id as catch_id, c.qty, c.weight_g, c.trip_id,
-               t.trip_date, w.name as water_name,
-               l.brand as lure_brand, l.model as lure_model,
-               s.name as species_name
+        SELECT c.id, t.trip_date, w.name as water, l.brand, l.model,
+               sp.name as species_name, c.qty, c.weight_g, c.photo_url
         FROM catches c
         JOIN trips t ON t.id = c.trip_id
         JOIN waters w ON w.id = t.water_id
         JOIN lures l ON l.id = c.lure_id
-        JOIN species s ON s.id = c.species_id
+        JOIN species sp ON sp.id = c.species_id
         ORDER BY c.id DESC
         LIMIT ?
         """,
@@ -391,19 +410,21 @@ def recent_catches(conn, limit: int = 10) -> list[sqlite3.Row]:
 def get_catch(conn, catch_id: int) -> sqlite3.Row | None:
     return conn.execute(
         """
-        SELECT c.id as catch_id, c.qty, c.weight_g, c.trip_id,
-               t.trip_date, w.name as water_name,
-               l.brand as lure_brand, l.model as lure_model,
-               s.name as species_name
+        SELECT c.id, t.trip_date, w.name as water, l.brand, l.model,
+               sp.name as species_name, c.qty, c.weight_g, c.photo_url
         FROM catches c
         JOIN trips t ON t.id = c.trip_id
         JOIN waters w ON w.id = t.water_id
         JOIN lures l ON l.id = c.lure_id
-        JOIN species s ON s.id = c.species_id
+        JOIN species sp ON sp.id = c.species_id
         WHERE c.id = ?
         """,
         (catch_id,),
     ).fetchone()
+
+
+def set_catch_photo(conn, catch_id: int, photo_url: str | None):
+    conn.execute("UPDATE catches SET photo_url = ? WHERE id = ?", (photo_url, catch_id))
 
 
 def delete_catch(conn, catch_id: int):
@@ -417,43 +438,6 @@ def delete_catch(conn, catch_id: int):
     ).fetchone()["c"]
     if remaining == 0:
         conn.execute("DELETE FROM trips WHERE id = ?", (trip_id,))
-
-
-def recent_catches(conn, limit: int = 10) -> list[sqlite3.Row]:
-    return conn.execute(
-        """
-        SELECT c.id, t.trip_date, w.name as water, l.brand, l.model,
-               sp.name as species_name, c.qty, c.weight_g
-        FROM catches c
-        JOIN trips t ON t.id = c.trip_id
-        JOIN waters w ON w.id = t.water_id
-        JOIN lures l ON l.id = c.lure_id
-        JOIN species sp ON sp.id = c.species_id
-        ORDER BY c.id DESC
-        LIMIT ?
-        """,
-        (limit,),
-    ).fetchall()
-
-
-def get_catch(conn, catch_id: int) -> sqlite3.Row | None:
-    return conn.execute(
-        """
-        SELECT c.id, t.trip_date, w.name as water, l.brand, l.model,
-               sp.name as species_name, c.qty, c.weight_g
-        FROM catches c
-        JOIN trips t ON t.id = c.trip_id
-        JOIN waters w ON w.id = t.water_id
-        JOIN lures l ON l.id = c.lure_id
-        JOIN species sp ON sp.id = c.species_id
-        WHERE c.id = ?
-        """,
-        (catch_id,),
-    ).fetchone()
-
-
-def delete_catch(conn, catch_id: int):
-    conn.execute("DELETE FROM catches WHERE id = ?", (catch_id,))
 
 
 def export_all_rows(conn) -> list[dict]:
