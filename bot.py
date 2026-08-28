@@ -19,7 +19,7 @@ from aiogram.types import Message, CallbackQuery, BufferedInputFile, BotCommand
 import config
 import db
 import keyboards as kb
-from states import TripFlow, AddPhotoFlow, CatalogFlow, CatchPhotoFlow, WaterPhotoFlow
+from states import TripFlow, AddPhotoFlow, CatalogFlow
 import export as export_module
 import photo_storage
 import web_api
@@ -62,9 +62,7 @@ async def cmd_start(message: Message, state: FSMContext):
         "/export — выгрузить весь архив в CSV\n"
         "/addphoto — добавить фото к любой приманке из справочника\n"
         "/recent — последние уловы (можно удалить ошибочную запись)\n"
-        "/catalog — удалить приманку, водоём или вид рыбы из справочника\n"
-        "/catchphoto — фото конкретного улова (например трофейного)\n"
-        "/waterphoto — фото водоёма",
+        "/catalog — удалить приманку, водоём или вид рыбы из справочника",
         reply_markup=kb.main_menu_kb(),
     )
 
@@ -213,166 +211,6 @@ async def addphoto_receive(message: Message, state: FSMContext, bot: Bot):
             if url:
                 db.set_lure_photo(conn, lure_id, url)
                 await message.answer("Фото сохранено ✅ Можешь прислать /addphoto ещё для другой приманки.")
-        except Exception as e:
-            await message.answer(f"Не получилось загрузить фото ({e}).")
-    await state.clear()
-
-
-# ---------------------------------------------------------------------------
-# /catchphoto — фото конкретного улова (например трофейной рыбы)
-# ---------------------------------------------------------------------------
-
-@router.message(Command("catchphoto"))
-async def cmd_catchphoto(message: Message, state: FSMContext):
-    if not config.PHOTOS_ENABLED:
-        await message.answer(
-            "Хранилище фото ещё не настроено. Нужно задать GITHUB_TOKEN и GITHUB_REPO "
-            "в переменных окружения (см. README, шаг про фото приманок)."
-        )
-        return
-    await state.clear()
-    with db.get_conn() as conn:
-        rows = db.recent_catches(conn, limit=15)
-    if not rows:
-        await message.answer("Пока нет ни одной записи улова.")
-        return
-    await state.set_state(CatchPhotoFlow.choosing)
-    await message.answer(
-        "К какому улову добавить фото? (📷 — уже есть фото)",
-        reply_markup=kb.catch_photo_pick_kb(rows),
-    )
-
-
-@router.callback_query(CatchPhotoFlow.choosing, F.data.startswith("cphpick:"))
-async def catchphoto_pick(callback: CallbackQuery, state: FSMContext):
-    catch_id = int(callback.data.split(":", 1)[1])
-    with db.get_conn() as conn:
-        c = db.get_catch(conn, catch_id)
-    if not c:
-        await callback.answer("Эта запись уже не найдена.", show_alert=True)
-        return
-    text = f"{c['trip_date']} · {c['species_name']} x{c['qty']} на {c['brand']} {c['model']}"
-    await callback.message.answer(text, reply_markup=kb.photo_manage_kb("cph", catch_id, bool(c["photo_url"])))
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("cph:"))
-async def catchphoto_manage(callback: CallbackQuery, state: FSMContext):
-    _, action, catch_id = callback.data.split(":")
-    catch_id = int(catch_id)
-    if action == "add":
-        await state.update_data(photo_catch_id=catch_id)
-        await state.set_state(CatchPhotoFlow.waiting_photo)
-        await callback.message.answer("Пришли фото улова:")
-    elif action == "del":
-        with db.get_conn() as conn:
-            db.set_catch_photo(conn, catch_id, None)
-        await callback.message.answer("Фото удалено ✅")
-        await state.clear()
-    else:
-        await callback.message.answer("Отменено.")
-        await state.clear()
-    await callback.answer()
-
-
-@router.message(CatchPhotoFlow.waiting_photo, F.photo)
-async def catchphoto_receive(message: Message, state: FSMContext, bot: Bot):
-    data = await state.get_data()
-    catch_id = data["photo_catch_id"]
-    photo = message.photo[-1]
-    file = await bot.get_file(photo.file_id)
-    file_bytes = await bot.download_file(file.file_path)
-
-    with db.get_conn() as conn:
-        c = db.get_catch(conn, catch_id)
-        filename = photo_storage.make_filename("catch", str(catch_id), c["species_name"])
-        try:
-            url = photo_storage.upload_photo(file_bytes.read(), filename, folder="catch_photos")
-            if url:
-                db.set_catch_photo(conn, catch_id, url)
-                await message.answer("Фото сохранено ✅ Можешь прислать /catchphoto ещё для другого улова.")
-        except Exception as e:
-            await message.answer(f"Не получилось загрузить фото ({e}).")
-    await state.clear()
-
-
-# ---------------------------------------------------------------------------
-# /waterphoto — фото водоёма
-# ---------------------------------------------------------------------------
-
-@router.message(Command("waterphoto"))
-async def cmd_waterphoto(message: Message, state: FSMContext):
-    if not config.PHOTOS_ENABLED:
-        await message.answer(
-            "Хранилище фото ещё не настроено. Нужно задать GITHUB_TOKEN и GITHUB_REPO "
-            "в переменных окружения (см. README, шаг про фото приманок)."
-        )
-        return
-    await state.clear()
-    await state.set_state(WaterPhotoFlow.searching)
-    await message.answer("Введи название водоёма для поиска:")
-
-
-@router.message(WaterPhotoFlow.searching)
-async def waterphoto_search(message: Message, state: FSMContext):
-    with db.get_conn() as conn:
-        rows = db.search_waters(conn, message.text.strip())
-    if not rows:
-        await message.answer("Ничего не нашёл. Попробуй другой запрос:")
-        return
-    await message.answer("Нашёл вот что:", reply_markup=kb.water_photo_results_kb(rows))
-
-
-@router.callback_query(WaterPhotoFlow.searching, F.data.startswith("wphpick:"))
-async def waterphoto_pick(callback: CallbackQuery, state: FSMContext):
-    water_id = int(callback.data.split(":", 1)[1])
-    with db.get_conn() as conn:
-        w = db.get_water(conn, water_id)
-    if not w:
-        await callback.answer("Этот водоём уже не найден.", show_alert=True)
-        return
-    await callback.message.answer(
-        f'Водоём: "{w["name"]}"',
-        reply_markup=kb.photo_manage_kb("wph", water_id, bool(w["photo_url"])),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("wph:"))
-async def waterphoto_manage(callback: CallbackQuery, state: FSMContext):
-    _, action, water_id = callback.data.split(":")
-    water_id = int(water_id)
-    if action == "add":
-        await state.update_data(photo_water_id=water_id)
-        await state.set_state(WaterPhotoFlow.waiting_photo)
-        await callback.message.answer("Пришли фото водоёма:")
-    elif action == "del":
-        with db.get_conn() as conn:
-            db.set_water_photo(conn, water_id, None)
-        await callback.message.answer("Фото удалено ✅")
-        await state.clear()
-    else:
-        await callback.message.answer("Отменено.")
-        await state.clear()
-    await callback.answer()
-
-
-@router.message(WaterPhotoFlow.waiting_photo, F.photo)
-async def waterphoto_receive(message: Message, state: FSMContext, bot: Bot):
-    data = await state.get_data()
-    water_id = data["photo_water_id"]
-    photo = message.photo[-1]
-    file = await bot.get_file(photo.file_id)
-    file_bytes = await bot.download_file(file.file_path)
-
-    with db.get_conn() as conn:
-        w = db.get_water(conn, water_id)
-        filename = photo_storage.make_filename("water", w["name"])
-        try:
-            url = photo_storage.upload_photo(file_bytes.read(), filename, folder="water_photos")
-            if url:
-                db.set_water_photo(conn, water_id, url)
-                await message.answer("Фото сохранено ✅ Можешь прислать /waterphoto ещё для другого водоёма.")
         except Exception as e:
             await message.answer(f"Не получилось загрузить фото ({e}).")
     await state.clear()
@@ -1016,8 +854,6 @@ async def main():
         BotCommand(command="export", description="📤 Выгрузить архив в CSV"),
         BotCommand(command="addphoto", description="📷 Добавить фото приманки"),
         BotCommand(command="catalog", description="🗂 Удалить приманку/водоём/вид рыбы"),
-        BotCommand(command="catchphoto", description="🐟 Фото конкретного улова"),
-        BotCommand(command="waterphoto", description="🌊 Фото водоёма"),
     ])
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
