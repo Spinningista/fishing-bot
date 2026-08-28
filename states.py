@@ -42,3 +42,13 @@ class AddPhotoFlow(StatesGroup):
 class CatalogFlow(StatesGroup):
     choosing_type = State()
     searching = State()
+
+
+class CatchPhotoFlow(StatesGroup):
+    choosing = State()
+    waiting_photo = State()
+
+
+class WaterPhotoFlow(StatesGroup):
+    searching = State()
+    waiting_photo = State()
