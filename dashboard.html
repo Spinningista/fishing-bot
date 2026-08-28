@@ -337,7 +337,6 @@
     <button class="tab-btn" data-tab="lure">Приманка</button>
     <button class="tab-btn" data-tab="water">Водоём</button>
     <button class="tab-btn" data-tab="species">Вид рыбы</button>
-    <button class="tab-btn" data-tab="log">Все уловы</button>
     <button class="tab-btn" data-tab="log">Журнал</button>
   </div>
 
@@ -962,7 +961,11 @@ function initWaterTab(){
     }
     const records = RAW.filter(r=>r.w===w);
     const content = document.getElementById('waterContent');
-    content.innerHTML = entityDashboardHtml('water', {showSpecies:true, showSpot:true, showBrand:true, showModel:true, showCondition2:true});
+    const photoUrl = records.map(r=>r.wph).find(p=>p);
+    const photoBlock = photoUrl
+      ? `<div class="lure-photo-card"><img src="${escapeHtml(photoUrl)}" alt="${escapeHtml(w)}"><div class="info-line" style="margin:0;"><span>Водоём: <b>${escapeHtml(w)}</b></span></div></div>`
+      : `<div class="lure-photo-card"><div class="lure-photo-placeholder">нет фото</div><div class="info-line" style="margin:0;"><span>Водоём: <b>${escapeHtml(w)}</b></span></div></div>`;
+    content.innerHTML = photoBlock + entityDashboardHtml('water', {showSpecies:true, showSpot:true, showBrand:true, showModel:true, showCondition2:true});
     renderEntityStats('water', records, {showSpecies:true, showSpot:true, showBrand:true, showModel:true, showCondition:true});
   };
 }
@@ -1033,13 +1036,17 @@ function initLogTab(){
     }
 
     const head = `<thead><tr>
-      <th>Дата</th><th>Водоём</th><th>Место</th><th>Условия</th>
+      <th>Дата</th><th>Фото</th><th>Водоём</th><th>Место</th><th>Условия</th>
       <th>Рыба</th><th>Кол-во</th><th>Вес</th><th>Приманка</th><th>Категория</th>
     </tr></thead>`;
     const body = rows.map(r => {
       const lureKey = r.br + '||' + r.mdl;
+      const photoCell = r.cph
+        ? `<img src="${escapeHtml(r.cph)}" alt="фото улова" style="width:36px; height:36px; object-fit:cover; border-radius:3px; cursor:zoom-in; vertical-align:middle;" class="log-photo-thumb">`
+        : '—';
       return `<tr>
         <td>${escapeHtml(r.d)}</td>
+        <td>${photoCell}</td>
         <td><span class="nav-link" data-nav-type="water" data-nav-value="${escapeHtml(r.w)}">${escapeHtml(r.w)}</span></td>
         <td>${escapeHtml(r.sp || '—')}</td>
         <td>${escapeHtml(r.c)}</td>
@@ -1100,11 +1107,11 @@ requestAnimationFrame(()=>{
   requestAnimationFrame(()=>{ path.style.strokeDashoffset = '0'; });
 });
 
-/* лайтбокс — увеличенный просмотр фото приманки */
+/* лайтбокс — увеличенный просмотр фото приманки/водоёма/улова */
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightboxImg');
 document.addEventListener('click', (e)=>{
-  const img = e.target.closest('.lure-photo-card img');
+  const img = e.target.closest('.lure-photo-card img, .log-photo-thumb');
   if(img){
     lightboxImg.src = img.src;
     lightbox.classList.add('active');
